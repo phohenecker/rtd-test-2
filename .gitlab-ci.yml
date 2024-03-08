@@ -1,0 +1,75 @@
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+#                                                                             #
+#   Copyright (c) 2024 Avantia Law Limited (Avantia). All Rights Reserved.    #
+#                                                                             #
+#   IT IS STRICTLY PROHIBITED TO USE, COPY, MODIFY, OR DISTRIBUTE THIS        #
+#   SOFTWARE IN SOURCE OR BINARY FORMS FOR ANY PURPOSE WITHOUT EXPRESS        #
+#   WRITTEN PERMISSION OF AVANTIA.                                            #
+#                                                                             #
+#   IN NO EVENT SHALL AVANTIA BE LIABLE TO ANY PARTY FOR DIRECT, INDIRECT,    #
+#   SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, INCLUDING LOST PROFITS,    #
+#   ARISING OUT OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF    #
+#   AVANTIA HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.               #
+#                                                                             #
+#   AVANTIA SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT         #
+#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR     #
+#   A PARTICULAR PURPOSE. AVANTIA HAS NO OBLIGATION TO PROVIDE MAINTENANCE,   #
+#   SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.                         #
+#                                                                             #
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+
+stages:
+    -   version
+    -   library
+    -   tag
+
+
+cache:
+    key: $CI_PIPELINE_ID
+    paths:
+        -   pyproject.toml  # -> Ensures that snapshot versions are carried over from stage to stage.
+
+
+default:
+    image: python@sha256:849ed6079c9f797ca9c1b7d6aea1c00aea3ac35110cbd0d6003f15950017ea8d  # -> python:3.12.2-alpine3.19
+    before_script:
+        -   export GOOGLE_APPLICATION_CREDENTIALS="/tmp/${CI_PIPELINE_ID}.json"
+        -   echo "${SERVICE_ACCOUNT_KEY}" > "${GOOGLE_APPLICATION_CREDENTIALS}"
+        -   apk update
+        -   apk add just=1.16.0-r0
+        -   apk add curl
+        -   curl -sSL https://install.python-poetry.org | POETRY_HOME=/opt/poetry python -
+        -   ln -s /opt/poetry/bin/poetry /usr/local/bin
+        -   poetry install
+
+
+update-version-to-snapshot-job:
+    stage: version
+    script:
+        -   just update-version-to-snapshot
+    rules:
+        -   if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH != "main"
+
+
+test-build-and-publish-library-job:
+    stage: library
+    script:
+        -   just test
+        -   just publish-library
+
+
+tag-release-job:
+    stage: tag
+    script:
+        -   apk add git
+        -   VERSION=$(just print-version)
+        -   TAG_NAME="v${VERSION}"
+        -   git remote remove origin
+        -   git remote add origin https://oauth2:${TAG_ACCESS_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git
+        -   git config user.email "${TAG_USER_EMAIL}"
+        -   git config user.name "${TAG_USER_NAME}"
+        -   git tag -a "${TAG_NAME}" -m "Release version ${VERSION}"
+        -   git push origin HEAD:main "${TAG_NAME}" -o ci.skip
+    rules:
+        -   if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"
