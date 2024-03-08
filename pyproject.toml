@@ -30,8 +30,8 @@ packages = [{include = "myrtdtestpkg", from = "src/main"}]
 license = "See license in LICENSE"
 
 
-[tool.poetry.group.docs]
-optional = true
+
+
 
 
 [tool.poetry.dependencies]
